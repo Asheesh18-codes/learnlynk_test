@@ -1,3 +1,8 @@
+// LearnLynk Tech Test - Task 3: Edge Function create-task
+
+// Deno + Supabase Edge Functions style
+// Docs reference: https://supabase.com/docs/guides/functions
+
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -26,6 +31,7 @@ serve(async (req: Request) => {
     const body = (await req.json()) as Partial<CreateTaskPayload>;
     const { application_id, task_type, due_at } = body;
 
+    // Validate required fields
     if (!application_id || !task_type || !due_at) {
       return new Response(
         JSON.stringify({ error: "Missing required fields: application_id, task_type, due_at" }),
@@ -33,6 +39,7 @@ serve(async (req: Request) => {
       );
     }
 
+    // Validate task_type
     if (!VALID_TYPES.includes(task_type)) {
       return new Response(
         JSON.stringify({ 
@@ -42,6 +49,7 @@ serve(async (req: Request) => {
       );
     }
 
+    // Validate due_at is a valid date and in the future
     const dueDate = new Date(due_at);
     if (isNaN(dueDate.getTime())) {
       return new Response(
@@ -58,6 +66,7 @@ serve(async (req: Request) => {
       );
     }
 
+    // Insert into tasks table
     const { data, error } = await supabase
       .from("tasks")
       .insert({
@@ -65,7 +74,7 @@ serve(async (req: Request) => {
         type: task_type,
         due_at,
         status: "open",
-        tenant_id: "00000000-0000-0000-0000-000000000000", // replace with tenant from JWT in production
+        tenant_id: "00000000-0000-0000-0000-000000000000", // In production, extract from JWT
       })
       .select()
       .single();
@@ -78,12 +87,14 @@ serve(async (req: Request) => {
       );
     }
 
+    // Emit Supabase Realtime broadcast event
     await supabase.channel("tasks").send({
       type: "broadcast",
       event: "task.created",
       payload: { task_id: data.id, application_id, task_type, due_at },
     });
 
+    // Return success response
     return new Response(
       JSON.stringify({ success: true, task_id: data.id }),
       { status: 200, headers: { "Content-Type": "application/json" } }
